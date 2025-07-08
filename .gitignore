@@ -2,10 +2,11 @@
 *.exe
 *.pkg
 
-# 忽略目錄
+# 忽略大型編譯檔案
 dist/
 build/
-__pycache__/
+*.exe
+*.pkg
 
 # VSCode / Python
 *.pyc
