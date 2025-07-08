@@ -1,0 +1,13 @@
+# 忽略編譯後的檔案
+*.exe
+*.pkg
+
+# 忽略目錄
+dist/
+build/
+__pycache__/
+
+# VSCode / Python
+*.pyc
+.vscode/
+.env
