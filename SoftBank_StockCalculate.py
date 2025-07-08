@@ -153,166 +153,59 @@ def calculate_inventory(factory_data, order_data, product_data):
 # Export results to Excel
 def export_to_excel(inventory, product_data):
     try:
-        """
-        Export calculated inventory to Excel, merging equivalent Part_No before exporting
-        """
-        excluded_parts = ['DEJ-OR-FRT-01399','出力定格電圧調整費(54.6V→52.8V)',
-                          '3073247220','(BB)TBM48050E2-1M22','(BA)TBM48050E2-1M22','(C)TBM48050E2-1S22']
-        print(f"開始處理庫存數據，將排除以下產品: {excluded_parts}")
-        
-        # 第一步：排除指定產品
+        print("\n開始處理庫存數據...")
+
+        # ===== 讀取對應表 Excel =====
+        mapping_file = r"\\jpdejstcfs01\STC_share\JP IT\STC SBK 仕分けリスト\IT system\part_mapping.xlsx"
+        one_to_one_df = pd.read_excel(mapping_file, sheet_name='OneToOne')
+        many_to_one_df = pd.read_excel(mapping_file, sheet_name='ManyToOne')
+        excluded_df = pd.read_excel(mapping_file, sheet_name='Exclude')
+
+        # ===== 排除不計算料號 =====
+        excluded_parts = excluded_df['Excluded_Part_No'].dropna().tolist()
         for part_no in excluded_parts:
             if part_no in inventory.columns:
                 inventory.drop(columns=[part_no], inplace=True)
-                print(f"  ✓ 已排除產品: {part_no}")
-            else:
-                print(f"  - 未找到要排除的產品: {part_no}")
-        # 1對1合併
-        part_no_mapping = {
-            '3798D000000278-S(free)': '3798D000000278-S',
-            '3798D000000225-S(free)': '3798D000000225-S',
-            '3798D000000228-S(free)': '3798D000000228-S',
-            'ESR-48/56L J-S(free)': 'ESR-48/56L J-S',
-            'ESBC200-CEA04(supplied materials)': 'ESBC200-CEA04',
-            'ESR-48/56C F-A(free)': 'ESR-48/56C F-A',
-            'ESAA75-CEA03(supplied materials)': 'ESAA75-CEA03',
-            'ESOF040-EAA01(supplied materials)': 'ESOF040-EAA01',
-            '3798D000000763-S(supplied materials)': '3798D000000763-S',
-            '3798D000000762-S(supplied materials)': '3798D000000762-S',
-            '3798D000000761-S(supplied materials)': '3798D000000761-S',
-            '3798D000000760-S(supplied materials)': '3798D000000760-S',
-            '3798D000000764-S(supplied materials)': '3798D000000764-S',
-            '3798C000000642-S(supplied materials)': '3798C000000642-S',
-            '3798D000000805-S(supplied materials)': '3798D000000805-S',
-            '3798D000000806-S(supplied materials)': '3798D000000806-S',
-            '3798Z00099AT-S(supplied materials)': '3798Z00099AT-S',
-            '3798C000000620-S(supplied materials)': '3798C000000620-S',
-            '3798C000000621-S(supplied materials)': '3798C000000621-S',
-            '3798D000000315-S(free)':'3798D000000315-S',
-            'ESAA75-CEA02(supplied materials)':'ESAA75-CEA02',
-            '3377144600-S(free)':'3377144600-S',
-            '3474179500(free)':'3474179500'
-        }
+                print(f"  ✓ 已排除: {part_no}")
 
-        # 1對1合併
-        for free_part_no, main_part_no in part_no_mapping.items():
-            if free_part_no in inventory.columns:
-                if main_part_no in inventory.columns:
-                    inventory[main_part_no] += inventory[free_part_no]
+        # ===== 一對一合併 =====
+        for _, row in one_to_one_df.iterrows():
+            free_part, main_part = row['Free_Part_No'], row['Main_Part_No']
+            if free_part in inventory.columns:
+                if main_part in inventory.columns:
+                    inventory[main_part] += inventory[free_part]
                 else:
-                    inventory.rename(columns={free_part_no: main_part_no}, inplace=True)
-                inventory.drop(columns=[free_part_no], inplace=True, errors='ignore')
+                    inventory.rename(columns={free_part: main_part}, inplace=True)
+                inventory.drop(columns=[free_part], inplace=True, errors='ignore')
 
-        # 多對1合併
-        multi_mapping = {
-            '3798C000000622-S': [ 
-                '3798C000000622-S(free)',  
-                '3798C000000622-S(supplied materials)(free)',  
-                '3798C000000622-S(supplied materials)'  
-            ],
-            
-            '3799906300-S': [
-                '3799906300-S(free)',
-                '3799906300-S(supplied materials)(free)'
-            ],
-            
-            '3799906200-S': [
-                '3799906200-S(free)',
-                '3799906200-S(supplied materials)(free)'
-            ],
-            
-            'ESBC200-CEA01': [
-                'ESBC200-CEA01(supplied materials)',
-                'ESBC200-CEA02(ESBC200-CEA01rework)',
-                'ESBC200-CEA03(ESBC200-CEA01rework)',
-                'ESBC200-CEA04(ESBC200-CEA01rework)',
-                'ESBC200-CEA02(ESBC200-CEA01rework supplied materials)',
-                'ESBC200-CEA03(ESBC200-CEA01rework supplied materials)',
-                'ESBC200-CEA04(ESBC200-CEA01rework supplied materials)'
-            ],
-            
-            'ESBC200-CEA02': [
-                'ESBC200-CEA02(supplied materials)',
-                'ESBC200-CEA03(ESBC200-CEA02rework)',
-                'ESBC200-CEA04(ESBC200-CEA02rework)',
-                'ESBC200-CEA03(ESBC200-CEA02rework supplied materials)',
-                'ESBC200-CEA04(ESBC200-CEA02rework supplied materials)'
-            ],
-            
-            'ESBC200-CEA03': [
-                'ESBC200-CEA03(supplied materials)',
-                'ESBC200-CEA04(ESBC200-CEA03rework)',
-                'ESBC200-CEA04(ESBC200-CEA03rework supplied materials)'
-            ],
-            
-            'ESBC200-CEA05': [
-                'ESBC200-CEA01(ESBC200-CEA05rework)',
-                'ESBC200-CEA02(ESBC200-CEA05rework)',
-                'ESBC200-CEA03(ESBC200-CEA05rework)',
-                'ESBC200-CEA04(ESBC200-CEA05rework)',
-                'ESBC200-CEA01(ESBC200-CEA05rework supplied materials)',
-                'ESBC200-CEA02(ESBC200-CEA05rework supplied materials)',
-                'ESBC200-CEA03(ESBC200-CEA05rework supplied materials)',
-                'ESBC200-CEA04(ESBC200-CEA05rework supplied materials)'
-            ],
-            'ESAA75-CEA01': [
-                'ESAA75-CEA01(supplied materials)',
-                'ESAA75-CEA02(ESAA75-CEA01rework supplied materials)',
-                'ESAA75-CEA02(ESAA75-CEA01rework)'
-            ],
-                
-                'ESAA75-CEA04': [
-                'ESAA75-CEA04(supplied materials)',
-                'ESAA75-CEA03(ESAA75-CEA04rework)',
-                'ESAA75-CEA03(ESAA75-CEA04rework supplied materials)'
-            ],
-                'ESAA75-CEA05': [
-                'ESAA75-CEA05(supplied materials)',
-                'ESAA75-CEA03(ESAA75-CEA05rework)',
-                'ESAA75-CEA04(ESAA75-CEA05rework)',
-                'ESAA75-CEA03(ESAA75-CEA05rework supplied materials)',
-                'ESAA75-CEA04(ESAA75-CEA05rework supplied materials)'
-            ]
-        }
-
-        # 多對1合併
-        for main_part_no, part_list in multi_mapping.items():
-            for part in part_list:
-                if part in inventory.columns:
-                    if main_part_no in inventory.columns:
-                        inventory[main_part_no] += inventory[part]
+        # ===== 多對一合併 =====
+        for main_part, group_df in many_to_one_df.groupby('Main_Part_No'):
+            for alias_part in group_df['Alias_Part_No']:
+                if alias_part in inventory.columns:
+                    if main_part in inventory.columns:
+                        inventory[main_part] += inventory[alias_part]
                     else:
-                        inventory[main_part_no] = inventory[part]
-                    inventory.drop(columns=[part], inplace=True, errors='ignore')
+                        inventory[main_part] = inventory[alias_part]
+                    inventory.drop(columns=[alias_part], inplace=True, errors='ignore')
 
-        # 轉置 DataFrame
+        # ===== 插入 Model =====
         inventory_transposed = inventory.T
-
-        # 獲取 Part_No 與 Model 對應資訊
         part_no_model_mapping = product_data.set_index('Part_No')['Model'].to_dict()
-
-        # 在 Part_No 前面新增 Model 欄位
-        inventory_transposed = inventory.T
         inventory_transposed.insert(0, 'Model', inventory_transposed.index.map(part_no_model_mapping))
 
-        # 生成檔名
+        # ===== 檔名與儲存路徑 =====
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         file_name = f"Daily_Inventory_Simulate_{timestamp}.xlsx"
-
-        # 設定網路路徑
         save_path = r"\\jpdejstcfs01\STC_share\JP IT\STC SBK 仕分けリスト\IT system\Report"
         full_path = os.path.join(save_path, file_name)
 
-        # 儲存為 Excel
         inventory_transposed.to_excel(full_path, index=True)
-
-        # 讀取 Excel 進行格式化
         wb = load_workbook(full_path)
         ws = wb.active
 
-        # 設定標題格式
-        header_font = Font(bold=True, color="FFFFFF")  # 白色字體
-        header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")  # 深藍色背景
+        # ===== 格式設定 =====
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
         center_align = Alignment(horizontal="center", vertical="center")
         thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), 
                              top=Side(style='thin'), bottom=Side(style='thin'))
@@ -324,98 +217,58 @@ def export_to_excel(inventory, product_data):
                 cell.alignment = center_align
                 cell.border = thin_border
 
-        # 識別月末日期的欄位索引
         def get_month_end_columns():
-            """獲取月末日期對應的欄位索引"""
             month_end_cols = []
-            # 從第3欄開始檢查 (跳過Part_No和Model欄位)
             for col in range(3, ws.max_column + 1):
                 cell_value = ws.cell(row=1, column=col).value
                 if cell_value and isinstance(cell_value, datetime):
-                    # 檢查是否為月末最後一天
-                    date_obj = cell_value.date()
-                    last_day_of_month = calendar.monthrange(date_obj.year, date_obj.month)[1]
-                    if date_obj.day == last_day_of_month:
+                    last_day = calendar.monthrange(cell_value.year, cell_value.month)[1]
+                    if cell_value.day == last_day:
                         month_end_cols.append(col)
             return month_end_cols
 
         month_end_cols = get_month_end_columns()
-        print(f"月末欄位索引: {month_end_cols}")
 
-        # 設定內容格式
-        light_gray_fill = PatternFill(start_color="EAEAEA", end_color="EAEAEA", fill_type="solid")  # 交錯淺灰色背景
-        right_align = Alignment(horizontal="right", vertical="center")  # 數字靠右
-        left_align = Alignment(horizontal="left", vertical="center")    # 文字靠左
-        center_align = Alignment(horizontal="center", vertical="center")  # 居中
-
-        # 負數紅色字體格式
-        negative_font = Font(color="FF0000")  # 紅色字體
-        negative_bold_font = Font(color="FF0000", bold=True)  # 紅色粗體字體
-        
-        # 月末粗體格式
+        light_gray_fill = PatternFill(start_color="EAEAEA", end_color="EAEAEA", fill_type="solid")
+        right_align = Alignment(horizontal="right", vertical="center")
+        left_align = Alignment(horizontal="left", vertical="center")
+        negative_font = Font(color="FF0000")
+        negative_bold_font = Font(color="FF0000", bold=True)
         bold_font = Font(bold=True)
 
-        row_count = ws.max_row
-        col_count = ws.max_column
-
-        for row in range(2, row_count + 1):  # 跳過標題
-            for col in range(1, col_count + 1):
+        for row in range(2, ws.max_row + 1):
+            for col in range(1, ws.max_column + 1):
                 cell = ws.cell(row=row, column=col)
-                cell.border = thin_border  # 加邊框
-
-                if row % 2 == 0:  # 偶數行加淺灰色背景
+                cell.border = thin_border
+                if row % 2 == 0:
                     cell.fill = light_gray_fill
 
-                if isinstance(cell.value, (int, float)):  # 數值欄位
+                if isinstance(cell.value, (int, float)):
                     cell.alignment = right_align
                     cell.number_format = "#,##0"
-                    
-                    # 檢查是否為負數
                     is_negative = cell.value < 0
-                    
-                    # 檢查是否為月末欄位
                     is_month_end = col in month_end_cols
-                    
-                    # 根據條件設定字體格式
                     if is_negative and is_month_end:
-                        cell.font = negative_bold_font  # 負數且月末：紅色粗體
+                        cell.font = negative_bold_font
                     elif is_negative:
-                        cell.font = negative_font  # 僅負數：紅色
+                        cell.font = negative_font
                     elif is_month_end:
-                        cell.font = bold_font  # 僅月末：粗體
-                    
+                        cell.font = bold_font
                 else:
                     cell.alignment = left_align
 
-        # 自動調整欄寬
         for col in ws.columns:
-            max_length = 0
-            col_letter = get_column_letter(col[0].column)
-            for cell in col:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except:
-                    pass
-            adjusted_width = (max_length + 2)
-            ws.column_dimensions[col_letter].width = adjusted_width
+            max_length = max((len(str(cell.value)) for cell in col if cell.value), default=0)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = max_length + 2
 
-        # 凍結標題列
         ws.freeze_panes = "A2"
-
-        # 儲存格式化後的 Excel
         wb.save(full_path)
 
-        print(f"Daily inventory report exported and formatted: {full_path}")
-        print(f"已套用特殊格式:")
-        print(f"  - 月末日期欄位: 粗體")
-        print(f"  - 負數值: 紅色字體")
-        print(f"  - 月末負數值: 紅色粗體")
+        print(f"\n報表匯出成功: {full_path}")
 
     except Exception as e:
         logging.error(f"Error exporting to Excel: {e}")
         raise
-
 # Main function
 def main()-> int:
     try:
