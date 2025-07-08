@@ -217,7 +217,7 @@ if __name__ == "__main__":
     log_filename = setup_logging()
     
     # 配置參數
-    excel_file_path = r'\\jpdejstcfs01\\STC_share\\JP IT\STC SBK 仕分けリスト\\IT system\\SoftBankData_DBusing_test1 kae_20250528.xlsx'
+    excel_file_path = r'\\jpdejstcfs01\\STC_share\\JP IT\STC SBK 仕分けリスト\\IT system\\2025_SoftBank_deliverylist.xlsx'
     
     table_mapping = {
         'CustomerCode': 'dbo.SoftBank_Data_CustomerCode',
