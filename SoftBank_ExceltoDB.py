@@ -195,16 +195,29 @@ def process_excel_to_sql(excel_file_path, table_mapping, column_mappings):
             conn.close()
 
 
-def send_notification_email(log_filename):
-    """發送通知郵件"""
+def send_notification_email(log_filename, is_error=False):
+    """發送通知郵件，根據是否錯誤決定 email 內文"""
     try:
         sender_email = "SRV.ITREMIND.RBT@deltaww.com"
         password = "Dej1tasd"
         email = Email()
         subject = "SoftBank_Update_dataBase"
-        body = "SoftBank 資料庫更新完成，詳細記錄請參考附件。"
+
+        # 讀取 log 內容（最多 100 行防止過大）
+        with open(log_filename, encoding='utf-8') as f:
+            log_lines = f.readlines()
+            preview_log = ''.join(log_lines[-100:])  # 只取最後 100 行
         
-        for recipient in ['boris.wang@deltaww.com']:
+        if is_error:
+            body = (
+                "💥 SoftBank 資料庫更新失敗！請參考以下錯誤記錄：\n\n"
+                f"{preview_log}\n\n"
+                "📎 詳細日誌已附加，請確認處理。"
+            )
+        else:
+            body = "✅ SoftBank 資料庫更新完成，詳細記錄請參考附件。"
+
+        for recipient in ['boris.wang@deltaww.com','GRACE.YC.HSU@deltaww.com','KAE.CHUNG@deltaww.com']:
             email.send_email(sender_email, password, recipient, subject, body, log_filename)
         
         logging.info("✉️ 通知郵件發送完成")
@@ -297,8 +310,8 @@ if __name__ == "__main__":
     try:
         logging.info("🚀 開始處理 SoftBank 資料庫更新（強化全角半角標準化版本）")
         process_excel_to_sql(excel_file_path, table_mapping, column_mappings)
-        send_notification_email(log_filename)
-        
+        send_notification_email(log_filename, is_error=False)
+
     except Exception as e:
         logging.error(f"💥 程式執行失敗: {e}")
-        send_notification_email(log_filename)  # 即使失敗也發送郵件通知
+        send_notification_email(log_filename, is_error=True)
