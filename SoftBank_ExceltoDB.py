@@ -193,7 +193,13 @@ def process_excel_to_sql(excel_file_path, table_mapping, column_mappings):
             cursor.close()
         if conn:
             conn.close()
-
+def check_log_error(log_filename):
+    """檢查 log 檔是否有 ERROR 行"""
+    with open(log_filename, encoding='utf-8') as f:
+        for line in f:
+            if "ERROR" in line or "❌" in line:
+                return True
+    return False
 
 def send_notification_email(log_filename, is_error=False):
     """發送通知郵件，根據是否錯誤決定 email 內文"""
@@ -295,7 +301,7 @@ if __name__ == "__main__":
         },
         'Productinfo': {
             'Delta_PartNO': ('Delta_PartNO', 'NVARCHAR(255)'),
-            'Remark': ('Remark', 'NVARCHAR(255)'),
+            'REMARK': ('Remark', 'NVARCHAR(255)'),
             'Category': ('Category', 'NVARCHAR(255)'),
             '1SET10PCS': ('1SET10PCS', 'NVARCHAR(255)'),
             'Customer_Model_Name': ('Customer_Model_Name', 'NVARCHAR(255)'),
@@ -310,7 +316,8 @@ if __name__ == "__main__":
     try:
         logging.info("🚀 開始處理 SoftBank 資料庫更新（強化全角半角標準化版本）")
         process_excel_to_sql(excel_file_path, table_mapping, column_mappings)
-        send_notification_email(log_filename, is_error=False)
+        has_error = check_log_error(log_filename)
+        send_notification_email(log_filename, is_error=has_error)
 
     except Exception as e:
         logging.error(f"💥 程式執行失敗: {e}")
