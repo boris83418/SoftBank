@@ -74,12 +74,13 @@ def create_or_clear_table(cursor, table_name, column_mappings, sheet_name):
             cursor.execute(sql)
             logging.info(f"✓ {sheet_name} 表格建立完成")
         else:
-            cursor.execute(f"DELETE FROM {table_name};")
-            logging.info(f"✓ {sheet_name} 表格資料已清除")
+            cursor.execute(f"TRUNCATE TABLE {table_name};")
+            logging.info(f"✓ {sheet_name} 表格資料已清除並重置流水號")
 
     except Exception as e:
         logging.error(f"處理表格 {table_name} 失敗: {e}")
         raise
+
 
 
 def process_factory_shipment_data(df):
