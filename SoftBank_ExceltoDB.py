@@ -4,6 +4,7 @@ import logging
 from sendEmail import Email
 import datetime
 import unicodedata
+from collections import defaultdict
 
 def normalize_to_halfwidth(text):
     """將文字轉為半型（包含特殊符號處理）"""
@@ -202,6 +203,101 @@ def check_log_error(log_filename):
                 return True
     return False
 
+def normalize_product_key(value):
+    """Normalize product names for warning-only comparison."""
+    if value is None:
+        return ""
+    text = normalize_to_halfwidth(str(value)).strip()
+    text = " ".join(text.split())
+    return text.casefold()
+
+def build_product_name_warning():
+    """Build an email warning for product names that inventory simulation may miss."""
+    conn = None
+    cursor = None
+    try:
+        conn = connect_to_database('jpdejitdev01', 'ITQAS2')
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            DECLARE @StartDate date = DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1);
+            DECLARE @EndDate date = DATEADD(day, 180, @StartDate);
+
+            SELECT DISTINCT Product_Name
+            FROM dbo.SoftBank_Data_Orderinfo
+            WHERE Product_Name IS NOT NULL
+              AND LTRIM(RTRIM(Product_Name)) <> ''
+              AND COALESCE(Actual_Shipment_Date, Estimated_Shipment_Date) BETWEEN @StartDate AND @EndDate
+              AND (
+                  Quotation_status IS NULL
+                  OR Quotation_status NOT IN ('quotation', 'cancel', 'confirming', 'double cancel')
+              )
+        """)
+        order_names = sorted({row[0] for row in cursor.fetchall() if row[0]})
+
+        cursor.execute("""
+            SELECT DISTINCT Delta_PartNO
+            FROM dbo.SoftBank_Data_Productinfo
+            WHERE Delta_PartNO IS NOT NULL AND LTRIM(RTRIM(Delta_PartNO)) <> ''
+        """)
+        product_names = sorted({row[0] for row in cursor.fetchall() if row[0]})
+
+        exact_products = set(product_names)
+        normalized_products = defaultdict(list)
+        for product_name in product_names:
+            normalized_products[normalize_product_key(product_name)].append(product_name)
+
+        suspicious_matches = []
+        missing_names = []
+        for order_name in order_names:
+            if order_name in exact_products:
+                continue
+
+            possible_matches = normalized_products.get(normalize_product_key(order_name), [])
+            if possible_matches:
+                suspicious_matches.append((order_name, possible_matches))
+            else:
+                missing_names.append(order_name)
+
+        if not suspicious_matches and not missing_names:
+            return ""
+
+        max_items = 30
+        lines = [
+            "",
+            "Product Name check for inventory simulation:",
+            "The inventory simulation matches Orderinfo.Product_Name to Productinfo.Delta_PartNO by exact text.",
+            "The following names may not be counted correctly until the names are aligned.",
+            "",
+        ]
+
+        if suspicious_matches:
+            lines.append("Possible same product, but different text/case/full-width characters:")
+            for order_name, possible_matches in suspicious_matches[:max_items]:
+                lines.append(f"- Orderinfo: {order_name}  | Productinfo: {', '.join(possible_matches[:3])}")
+            if len(suspicious_matches) > max_items:
+                lines.append(f"- ... {len(suspicious_matches) - max_items} more")
+            lines.append("")
+
+        if missing_names:
+            lines.append("No matching Delta_PartNO found in Productinfo:")
+            for order_name in missing_names[:max_items]:
+                lines.append(f"- {order_name}")
+            if len(missing_names) > max_items:
+                lines.append(f"- ... {len(missing_names) - max_items} more")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logging.error(f"Product name warning check failed: {e}")
+        return "\nProduct Name check failed. Please check the attached log.\n"
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 def send_notification_email(log_filename, is_error=False):
     """發送通知郵件，根據是否錯誤決定 email 內文"""
     try:
@@ -214,15 +310,20 @@ def send_notification_email(log_filename, is_error=False):
         with open(log_filename, encoding='utf-8') as f:
             log_lines = f.readlines()
             preview_log = ''.join(log_lines[-100:])  # 只取最後 100 行
+        product_name_warning = build_product_name_warning()
         
         if is_error:
             body = (
                 "💥 SoftBank 資料庫更新失敗！請參考以下錯誤記錄：\n\n"
+                f"{product_name_warning}\n"
                 f"{preview_log}\n\n"
                 "📎 詳細日誌已附加，請確認處理。"
             )
         else:
-            body = "✅ SoftBank 資料庫更新完成，詳細記錄請參考附件。"
+            body = (
+                "✅ SoftBank 資料庫更新完成，詳細記錄請參考附件。"
+                f"\n{product_name_warning}"
+            )
 
         for recipient in ['boris.wang@deltaww.com','GRACE.YC.HSU@deltaww.com','KAE.CHUNG@deltaww.com']:
             email.send_email(sender_email, password, recipient, subject, body, log_filename)
