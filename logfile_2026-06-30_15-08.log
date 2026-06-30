@@ -1,0 +1,16 @@
+2026-06-30 15:08:24,583 - INFO - 🚀 開始處理 SoftBank 資料庫更新（強化全角半角標準化版本）
+2026-06-30 15:08:24,999 - INFO - 成功連線到資料庫: jpdejitdev01/ITQAS2
+2026-06-30 15:08:25,000 - INFO - 📊 處理工作表: CustomerCode
+2026-06-30 15:08:27,805 - INFO - ✓ CustomerCode 表格資料已清除並重置流水號
+2026-06-30 15:08:28,070 - INFO - ✓ CustomerCode: 成功插入 57 筆，失敗 0 筆
+2026-06-30 15:08:28,071 - INFO - 📊 處理工作表: FactoryShipment
+2026-06-30 15:08:28,405 - INFO - ✓ FactoryShipment 表格資料已清除並重置流水號
+2026-06-30 15:08:29,311 - INFO - ✓ FactoryShipment: 成功插入 212 筆，失敗 0 筆
+2026-06-30 15:08:29,312 - INFO - 📊 處理工作表: Orderinfo
+2026-06-30 15:08:30,392 - INFO - ✓ Orderinfo 表格資料已清除並重置流水號
+2026-06-30 15:08:47,726 - INFO - ✓ Orderinfo: 成功插入 4840 筆，失敗 0 筆
+2026-06-30 15:08:47,726 - INFO - 📊 處理工作表: Productinfo
+2026-06-30 15:08:48,249 - ERROR - 💥 處理過程中出現錯誤: [Errno 13] Permission denied: '\\\\jpdejstcfs01\\\\STC_share\\\\JP IT\\STC SBK 仕分けリスト\\\\IT system\\\\2025_SoftBank_deliverylist.xlsx'
+2026-06-30 15:08:48,378 - ERROR - 💥 程式執行失敗: [Errno 13] Permission denied: '\\\\jpdejstcfs01\\\\STC_share\\\\JP IT\\STC SBK 仕分けリスト\\\\IT system\\\\2025_SoftBank_deliverylist.xlsx'
+2026-06-30 15:08:48,386 - INFO - 成功連線到資料庫: jpdejitdev01/ITQAS2
+2026-06-30 15:08:51,265 - INFO - ✉️ 通知郵件發送完成

@@ -5,6 +5,7 @@ from sendEmail import Email
 import datetime
 import unicodedata
 from collections import defaultdict
+from html import escape
 
 def normalize_to_halfwidth(text):
     """將文字轉為半型（包含特殊符號處理）"""
@@ -211,6 +212,12 @@ def normalize_product_key(value):
     text = " ".join(text.split())
     return text.casefold()
 
+def html_value(value):
+    """Format DB values safely for HTML email."""
+    if value is None:
+        return "-"
+    return escape(str(value))
+
 def build_product_name_warning():
     """Build an email warning for product names that inventory simulation may miss."""
     conn = None
@@ -223,7 +230,12 @@ def build_product_name_warning():
             DECLARE @StartDate date = DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1);
             DECLARE @EndDate date = DATEADD(day, 180, @StartDate);
 
-            SELECT DISTINCT Product_Name
+            SELECT
+                OrderinfoNumber,
+                Product_Name,
+                COALESCE(Actual_Shipment_Date, Estimated_Shipment_Date) AS Shipment_Date,
+                Quantity,
+                Quotation_status
             FROM dbo.SoftBank_Data_Orderinfo
             WHERE Product_Name IS NOT NULL
               AND LTRIM(RTRIM(Product_Name)) <> ''
@@ -232,8 +244,9 @@ def build_product_name_warning():
                   Quotation_status IS NULL
                   OR Quotation_status NOT IN ('quotation', 'cancel', 'confirming', 'double cancel')
               )
+            ORDER BY Shipment_Date, OrderinfoNumber
         """)
-        order_names = sorted({row[0] for row in cursor.fetchall() if row[0]})
+        order_rows = cursor.fetchall()
 
         cursor.execute("""
             SELECT DISTINCT Delta_PartNO
@@ -247,51 +260,79 @@ def build_product_name_warning():
         for product_name in product_names:
             normalized_products[normalize_product_key(product_name)].append(product_name)
 
-        suspicious_matches = []
-        missing_names = []
-        for order_name in order_names:
+        skipped_rows = []
+        for row in order_rows:
+            order_no = row.OrderinfoNumber
+            order_name = row.Product_Name
+            shipment_date = row.Shipment_Date
+            quantity = row.Quantity
+            quotation_status = row.Quotation_status
+
             if order_name in exact_products:
                 continue
 
             possible_matches = normalized_products.get(normalize_product_key(order_name), [])
-            if possible_matches:
-                suspicious_matches.append((order_name, possible_matches))
-            else:
-                missing_names.append(order_name)
+            skipped_rows.append({
+                'order_no': order_no,
+                'product_name': order_name,
+                'shipment_date': shipment_date,
+                'quantity': quantity,
+                'quotation_status': quotation_status,
+                'possible_matches': possible_matches,
+            })
 
-        if not suspicious_matches and not missing_names:
+        if not skipped_rows:
             return ""
 
-        max_items = 30
-        lines = [
-            "",
-            "Product Name check for inventory simulation:",
-            "The inventory simulation matches Orderinfo.Product_Name to Productinfo.Delta_PartNO by exact text.",
-            "The following names may not be counted correctly until the names are aligned.",
-            "",
-        ]
+        html_rows = []
 
-        if suspicious_matches:
-            lines.append("Possible same product, but different text/case/full-width characters:")
-            for order_name, possible_matches in suspicious_matches[:max_items]:
-                lines.append(f"- Orderinfo: {order_name}  | Productinfo: {', '.join(possible_matches[:3])}")
-            if len(suspicious_matches) > max_items:
-                lines.append(f"- ... {len(suspicious_matches) - max_items} more")
-            lines.append("")
+        for skipped_row in skipped_rows:
+            possible_matches = skipped_row['possible_matches']
+            match_note = (
+                f"Possible Productinfo: {', '.join(possible_matches[:3])}"
+                if possible_matches
+                else "No matching Delta_PartNO found"
+            )
+            html_rows.append(
+                "<tr>"
+                f"<td>{html_value(skipped_row['order_no'])}</td>"
+                f"<td>{html_value(skipped_row['shipment_date'])}</td>"
+                f"<td style=\"text-align:right;\">{html_value(skipped_row['quantity'])}</td>"
+                f"<td>{html_value(skipped_row['quotation_status'])}</td>"
+                f"<td>{html_value(skipped_row['product_name'])}</td>"
+                f"<td>{html_value(match_note)}</td>"
+                "</tr>"
+            )
 
-        if missing_names:
-            lines.append("No matching Delta_PartNO found in Productinfo:")
-            for order_name in missing_names[:max_items]:
-                lines.append(f"- {order_name}")
-            if len(missing_names) > max_items:
-                lines.append(f"- ... {len(missing_names) - max_items} more")
-            lines.append("")
-
-        return "\n".join(lines)
+        return f"""
+<hr>
+<h3 style="margin-bottom: 8px;">Inventory simulation skipped order rows</h3>
+<p style="margin: 4px 0;">
+  The inventory simulation matches <b>Orderinfo.Product_Name</b> to <b>Productinfo.Delta_PartNO</b> by exact text.
+</p>
+<p style="margin: 4px 0 12px 0;">
+  <b>{len(skipped_rows)}</b> order row(s) are inside the simulation range but will not be counted until the product names are aligned.
+</p>
+<table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px;">
+  <thead style="background-color: #f2f2f2;">
+    <tr>
+      <th>OrderinfoNumber</th>
+      <th>Shipment Date</th>
+      <th>Quantity</th>
+      <th>Status</th>
+      <th>Product Name</th>
+      <th>Reason / Possible Match</th>
+    </tr>
+  </thead>
+  <tbody>
+    {''.join(html_rows)}
+  </tbody>
+</table>
+"""
 
     except Exception as e:
         logging.error(f"Product name warning check failed: {e}")
-        return "\nProduct Name check failed. Please check the attached log.\n"
+        return "<p><b>Product Name check failed.</b> Please check the attached log.</p>"
     finally:
         if cursor:
             cursor.close()
@@ -314,15 +355,15 @@ def send_notification_email(log_filename, is_error=False):
         
         if is_error:
             body = (
-                "💥 SoftBank 資料庫更新失敗！請參考以下錯誤記錄：\n\n"
-                f"{product_name_warning}\n"
-                f"{preview_log}\n\n"
-                "📎 詳細日誌已附加，請確認處理。"
+                "<p>💥 SoftBank 資料庫更新失敗！請參考以下錯誤記錄：</p>"
+                f"{product_name_warning}"
+                f"<pre style=\"background-color:#f7f7f7; padding:10px; border:1px solid #ddd; white-space:pre-wrap;\">{escape(preview_log)}</pre>"
+                "<p>📎 詳細日誌已附加，請確認處理。</p>"
             )
         else:
             body = (
-                "✅ SoftBank 資料庫更新完成，詳細記錄請參考附件。"
-                f"\n{product_name_warning}"
+                "<p>✅ SoftBank 資料庫更新完成，詳細記錄請參考附件。</p>"
+                f"{product_name_warning}"
             )
 
         for recipient in ['boris.wang@deltaww.com','GRACE.YC.HSU@deltaww.com','KAE.CHUNG@deltaww.com']:
